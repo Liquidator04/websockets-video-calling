@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Socket.IO Video Streaming</title>
+    <style>
+      /* Same styles as before */
+      body {
+        margin: 0;
+        padding-bottom: 3rem;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif;
+      }
+      #form {
+        background: rgba(0, 0, 0, 0.15);
+        padding: 0.25rem;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        height: 3rem;
+        box-sizing: border-box;
+        backdrop-filter: blur(10px);
+      }
+      #input {
+        border: none;
+        padding: 0 1rem;
+        flex-grow: 1;
+        border-radius: 2rem;
+        margin: 0.25rem;
+      }
+      #input:focus {
+        outline: none;
+      }
+      #form > button {
+        background: #333;
+        border: none;
+        padding: 0 1rem;
+        margin: 0.25rem;
+        border-radius: 3px;
+        outline: none;
+        color: #fff;
+      }
+      #messages {
+        list-style-type: none;
+        margin: 0;
+        padding: 0;
+      }
+      #messages > li {
+        padding: 0.5rem 1rem;
+      }
+      #messages > li:nth-child(odd) {
+        background: #efefef;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Capture Video and Convert to Binary</h1>
+    <div class="video-call-area" style="display: flex">
+      <div>
+        <video id="video-me" width="640" height="480" autoplay></video>
+        <canvas id="canvas-me" style="display: none"></canvas>
+      </div>
+      <div>
+        <image id="video-you" width="640" height="480"></image>
+      </div>
+    </div>
+    <ul id="messages"></ul>
+    <form id="form" action="">
+      <input id="input" autocomplete="off" /><button>Send</button>
+    </form>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io();
+
+      // Access the video camera
+      async function startVideo() {
+        const video = document.getElementById("video-me");
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+          });
+          video.srcObject = stream;
+        } catch (err) {
+          console.error("Error accessing the camera: ", err);
+        }
+      }
+
+      // Convert video frames to binary data
+      function captureFrameToBinary() {
+        const canvas = document.getElementById("canvas-me");
+        const video = document.getElementById("video-me");
+        const context = canvas.getContext("2d");
+
+        // Set canvas size to match video size
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        // Draw the current video frame onto the canvas
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // Convert the canvas image to binary (Blob)
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const reader = new FileReader();
+            reader.onloadend = function () {
+              const binaryData = reader.result; // This is the binary data of the image
+              socket.emit("hello", binaryData);
+              // console.log(binaryData); // Output binary data (ArrayBuffer)
+            };
+            reader.readAsArrayBuffer(blob);
+          }
+        }, "image/webp");
+      }
+
+      // Start capturing video from the camera
+      startVideo();
+
+      // Capture a frame every 1 second and convert to binary data
+      setInterval(captureFrameToBinary, 1000);
+
+      const form = document.getElementById("form");
+      const input = document.getElementById("input");
+      const messages = document.getElementById("messages");
+
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        if (input.value) {
+          socket.emit("chat message", input.value);
+          input.value = "";
+        }
+      });
+
+      socket.on("chat message", (msg) => {
+        const item = document.createElement("li");
+        item.textContent = msg;
+        messages.appendChild(item);
+        window.scrollTo(0, document.body.scrollHeight);
+      });
+
+      socket.on("connect", () => {
+        console.log("Connected to server");
+      });
+
+      socket.on("hello", (binaryData) => {
+        console.log("Received hello event");
+        // console.log(binaryData);
+        if (binaryData) {
+          // console.log("Binary data received:", binaryData);
+
+          // Convert the received binary data to a Blob
+          const blob = new Blob([binaryData], { type: "image/webp" });
+
+          // Create a URL for the Blob
+          const videoElement = document.getElementById("video-you");
+
+          // Create an image element to handle the frame
+          var videoUrl = window.URL.createObjectURL(blob);
+          videoElement.src = videoUrl;
+        } else {
+          console.error("No binary data received.");
+        }
+      });
+    </script>
+  </body>
+</html>
